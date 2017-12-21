@@ -25,7 +25,7 @@ class EmbeddingTrainer():
         """Load data."""
         with open(filename, 'r') as file:
             for line in file:
-                hypernym, hyponym, count = line.split()
+                hypernym, hyponym, count = line.split('\t')
                 self.hypernym_vocab.append(hypernym)
                 self.hyponym_vocab.append(hyponym)
                 self.data[(hypernym, hyponym)] = int(count)
