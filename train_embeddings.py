@@ -66,19 +66,20 @@ class EmbeddingTrainer():
             output = norm + count.log1p()
             return output
 
-    def train(self, epochs=10, print_loss=True):
+    def train(self, epochs=10, verbose=0):
         """Train the network"""
 
         net = EmbeddingTrainer.Net(self.hypernym_vocabulary_size, self.hyponym_vocabulary_size, self.embedding_size)
 
-        optimizer = optim.Adam(net.parameters(), lr=0.01)
+        optimizer = optim.SGD(net.parameters(), lr=0.01)
+        cost = Variable(torch.Tensor([0]))
 
         for epoch in range(epochs):
-            cost = Variable(torch.Tensor([0]))
+            counter = 0
+            cost_in_epoch = 0
 
             for (hypernym, hyponym), count in self.data.items():
                 for _ in range(count):
-
                     # Randomly change hypernym or hyponym
                     choice = random.choice([0, 1])
                     if choice is 0:
@@ -91,14 +92,19 @@ class EmbeddingTrainer():
                     count1 = self.data.get((hypernym1, hyponym1), 0)               
                     output = net(Variable(torch.LongTensor([self.word_hypernym_ix[hypernym]])), Variable(torch.LongTensor([self.word_hyponym_ix[hyponym]])), count)
                     output1 = net(Variable(torch.LongTensor([self.word_hypernym_ix[hypernym1]])), Variable(torch.LongTensor([self.word_hyponym_ix[hyponym1]])), count1)
-                    cost += torch.clamp(output - output1, min=0)
+                    cost = torch.clamp(output - output1, min=0)
+                    cost_in_epoch += cost.data[0]
+                    optimizer.zero_grad()
+                    cost.backward()
+                    optimizer.step()
+                    counter += 1
 
-            optimizer.zero_grad()
-            cost.backward()
-            optimizer.step()
-            
-            if print_loss:
-                print("Epoch {}: {}".format(epoch + 1, cost.data[0]))
+                    if counter % 1000 == 0:
+                        if verbose > 1:
+                            print("Weights trained over {} examples in Epoch {}.".format(counter, epoch + 1))
+
+            if verbose:
+                print("Train epoch {}: {}".format(epoch + 1, cost_in_epoch / counter))
 
         weights = list(net.parameters())
         self.hypernym_weights = weights[0].data.numpy()
@@ -136,8 +142,8 @@ class EmbeddingTrainer():
         self.data = filtered_data
 
 if __name__ == "__main__":
-    trainer = EmbeddingTrainer(embedding_size=10)
-    trainer.load_data(os.path.join('data', 'sample_data'))
-    trainer.train(epochs=1000, print_loss=True)
+    trainer = EmbeddingTrainer(embedding_size=50)
+    trainer.load_data(os.path.join('data', 'sample_data3'))
+    trainer.train(epochs=10, verbose=2)
     trainer.save_embeddings(os.path.join('data', 'hypernym_embedding'),\
                              os.path.join('data', 'hyponym_embedding'))
