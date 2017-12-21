@@ -68,7 +68,7 @@ class EmbeddingTrainer():
 
         net = EmbeddingTrainer.Net(self.hypernym_vocabulary_size, self.hyponym_vocabulary_size, self.embedding_size)
 
-        optimizer = optim.SGD(net.parameters(), lr=0.001)
+        optimizer = optim.Adam(net.parameters(), lr=0.01)
 
         for epoch in range(epochs):
             cost = Variable(torch.Tensor([0]))
@@ -88,7 +88,7 @@ class EmbeddingTrainer():
                     count1 = self.data.get((hypernym1, hyponym1), 0)               
                     output = net(Variable(torch.LongTensor([self.word_hypernym_ix[hypernym]])), Variable(torch.LongTensor([self.word_hyponym_ix[hyponym]])), count)
                     output1 = net(Variable(torch.LongTensor([self.word_hypernym_ix[hypernym1]])), Variable(torch.LongTensor([self.word_hyponym_ix[hyponym1]])), count1)
-                    cost += output - output1
+                    cost += torch.clamp(output - output1, min=0)
 
             optimizer.zero_grad()
             cost.backward()
@@ -120,7 +120,7 @@ class EmbeddingTrainer():
 if __name__ == "__main__":
     trainer = EmbeddingTrainer(embedding_size=10)
     trainer.load_data(os.path.join('data', 'sample_data'))
-    trainer.train(epochs=100)
+    trainer.train(epochs=1000)
     trainer.save_embeddings(os.path.join('data', 'hypernym_embedding'),\
                              os.path.join('data', 'hyponym_embedding'))
     
