@@ -1,5 +1,6 @@
 """Contains class for training embeddings"""
 
+from collections import Counter
 import os.path
 import random
 
@@ -28,6 +29,8 @@ class EmbeddingTrainer():
                 self.hypernym_vocab.append(hypernym)
                 self.hyponym_vocab.append(hyponym)
                 self.data[(hypernym, hyponym)] = int(count)
+
+        self.filter_data(minimum_count=5, minimum_frequency=0)
         
         # Remove duplicate words
         self.hypernym_vocab = set(self.hypernym_vocab)
@@ -116,18 +119,25 @@ class EmbeddingTrainer():
         string = ' '.join(map(lambda x: str(x), array))
         return string
 
+    def filter_data(self, minimum_count, minimum_frequency):
+        counter = Counter(self.hypernym_vocab)
+        counter.update(self.hyponym_vocab)
+
+        self.hypernym_vocab = []
+        self.hyponym_vocab = []
+
+        filtered_data = {}
+        for (hypernym, hyponym), count in self.data.items():
+            if counter[hypernym] > minimum_frequency and counter[hyponym] > minimum_frequency and count > minimum_count:
+                filtered_data[(hypernym, hyponym)] = count
+                self.hypernym_vocab.append(hypernym)
+                self.hyponym_vocab.append(hyponym)
+
+        self.data = filtered_data
 
 if __name__ == "__main__":
     trainer = EmbeddingTrainer(embedding_size=10)
     trainer.load_data(os.path.join('data', 'sample_data'))
-    trainer.train(epochs=1000)
+    trainer.train(epochs=1000, print_loss=True)
     trainer.save_embeddings(os.path.join('data', 'hypernym_embedding'),\
                              os.path.join('data', 'hyponym_embedding'))
-    
-
-
-
-
-
-
-
