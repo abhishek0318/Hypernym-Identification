@@ -58,24 +58,37 @@ class EmbeddingTrainer():
             self.hypernym_embedding = nn.Embedding(self.hypernym_vocabulary_size, self.embedding_size)
             self.hyponym_embedding = nn.Embedding(self.hyponym_vocabulary_size, self.embedding_size)
 
-        def forward(self, hypernym_ix, hyponym_ix, count):
+        def forward(self, hypernym_ix, hyponym_ix, count, hypernym_ix1, hyponym_ix1, count1):
             embed_hypernym = self.hypernym_embedding(hypernym_ix)
             embed_hyponym = self.hyponym_embedding(hyponym_ix)
-            norm = (embed_hypernym - embed_hyponym).norm(p=1)
-            count = Variable(torch.Tensor([count]))
-            output = norm + count.log1p()
-            return output
 
-    def train(self, epochs=10, verbose=0):
+            embed_hypernym1 = self.hypernym_embedding(hypernym_ix1)
+            embed_hyponym1 = self.hyponym_embedding(hyponym_ix1)
+
+            norm = (embed_hypernym - embed_hyponym).norm(p=1, dim=1)
+            norm1 = (embed_hypernym1 - embed_hyponym1).norm(p=1, dim=1)
+
+            cost = (norm + count.log1p()) - (norm1 + count1.log1p())
+            cost = torch.clamp(cost, min=0)
+            return cost
+
+    def train(self, epochs=10, batch_size=32, verbose=0):
         """Train the network"""
 
         net = EmbeddingTrainer.Net(self.hypernym_vocabulary_size, self.hyponym_vocabulary_size, self.embedding_size)
-
         optimizer = optim.SGD(net.parameters(), lr=0.01)
-        cost = Variable(torch.Tensor([0]))
+
+        # Used for temporarily storing data before gradient is updated
+        hypernyms = []
+        hyponyms = []
+        hypernyms1 = []
+        hyponyms1 = []
+        counts = []
+        counts1 = []
 
         for epoch in range(epochs):
-            counter = 0
+            # Counts number of examples trained on during an eopch
+            counter = 0 
             cost_in_epoch = 0
 
             for (hypernym, hyponym), count in self.data.items():
@@ -90,18 +103,69 @@ class EmbeddingTrainer():
                         hyponym1 = random.choice(self.hyponym_vocab)
 
                     count1 = self.data.get((hypernym1, hyponym1), 0)               
-                    output = net(Variable(torch.LongTensor([self.word_hypernym_ix[hypernym]])), Variable(torch.LongTensor([self.word_hyponym_ix[hyponym]])), count)
-                    output1 = net(Variable(torch.LongTensor([self.word_hypernym_ix[hypernym1]])), Variable(torch.LongTensor([self.word_hyponym_ix[hyponym1]])), count1)
-                    cost = torch.clamp(output - output1, min=0)
-                    cost_in_epoch += cost.data[0]
-                    optimizer.zero_grad()
-                    cost.backward()
-                    optimizer.step()
+
+                    hypernyms.append(hypernym)
+                    hyponyms.append(hyponym)
+                    hypernyms1.append(hypernym1)
+                    hyponyms1.append(hyponym1)
+                    counts.append(count)
+                    counts1.append(count1)
+
                     counter += 1
+
+                    # Update the gradients after every batch_size number of iterations
+                    if counter % batch_size == 0:
+                        # Get index of words
+                        hypernyms_ix = Variable(torch.LongTensor([self.word_hypernym_ix[hypernym] for hypernym in hypernyms]))
+                        hyponyms_ix = Variable(torch.LongTensor([self.word_hyponym_ix[hyponym] for hyponym in hyponyms]))
+
+                        hypernyms1_ix = Variable(torch.LongTensor([self.word_hypernym_ix[hypernym1] for hypernym1 in hypernyms1]))
+                        hyponyms1_ix = Variable(torch.LongTensor([self.word_hyponym_ix[hyponym1] for hyponym1 in hyponyms1]))
+
+                        # Compute cost
+                        cost = net(hypernyms_ix, hyponyms_ix, Variable(torch.Tensor([count])),\
+                                    hypernyms1_ix, hyponyms1_ix, Variable(torch.Tensor([count1])))
+
+                        cost_in_epoch += torch.sum(cost).data[0]
+                        optimizer.zero_grad()
+                        cost.backward(torch.ones(batch_size))
+                        optimizer.step()
+
+                        # Reset temporarily storage
+                        hypernyms = []
+                        hyponyms = []
+                        hypernyms1 = []
+                        hyponyms1 = []
+                        counts = []
+                        counts1 = []
 
                     if counter % 1000 == 0:
                         if verbose > 1:
                             print("Weights trained over {} examples in Epoch {}.".format(counter, epoch + 1))
+
+            # Update the gradients for remaining data
+            if len(hypernyms) != 0:
+                hypernyms_ix = Variable(torch.LongTensor([self.word_hypernym_ix[hypernym] for hypernym in hypernyms]))
+                hyponyms_ix = Variable(torch.LongTensor([self.word_hyponym_ix[hyponym] for hyponym in hyponyms]))
+
+                hypernyms1_ix = Variable(torch.LongTensor([self.word_hypernym_ix[hypernym1] for hypernym1 in hypernyms1]))
+                hyponyms1_ix = Variable(torch.LongTensor([self.word_hyponym_ix[hyponym1] for hyponym1 in hyponyms1]))
+
+                cost = net(hypernyms_ix, hyponyms_ix, Variable(torch.Tensor([count])),\
+                            hypernyms1_ix, hyponyms1_ix, Variable(torch.Tensor([count1])))
+
+                cost_in_epoch += torch.sum(cost).data[0]
+                optimizer.zero_grad()
+                cost.backward(torch.ones(cost.size()))
+                optimizer.step()
+
+                # Reset temporarily storage
+                hypernyms = []
+                hyponyms = []
+                hypernyms1 = []
+                hyponyms1 = []
+                counts = []
+                counts1 = []
 
             if verbose:
                 print("Train epoch {}: {}".format(epoch + 1, cost_in_epoch / counter))
@@ -144,6 +208,6 @@ class EmbeddingTrainer():
 if __name__ == "__main__":
     trainer = EmbeddingTrainer(embedding_size=50)
     trainer.load_data(os.path.join('data', 'sample_data3'))
-    trainer.train(epochs=10, verbose=2)
+    trainer.train(epochs=50, batch_size=32, verbose=2)
     trainer.save_embeddings(os.path.join('data', 'hypernym_embedding'),\
                              os.path.join('data', 'hyponym_embedding'))
