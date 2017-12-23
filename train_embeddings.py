@@ -22,7 +22,7 @@ class EmbeddingTrainer():
         self.word_hyponym_ix = {}
         self.verbose = verbose
     
-    def load_data(self, filename):
+    def load_data(self, filename, minimum_count=0, minimum_frequency=0):
         """Load data."""
         with open(filename, 'r') as file:
             for line in file:
@@ -34,7 +34,7 @@ class EmbeddingTrainer():
         if self.verbose > 1:
             print("File loaded.")
 
-        self.filter_data(minimum_count=5, minimum_frequency=0)
+        self.filter_data(minimum_count, minimum_frequency)
 
         if self.verbose > 1:
             print("Data filtered.")
@@ -234,7 +234,7 @@ class EmbeddingTrainer():
 
 if __name__ == "__main__":
     trainer = EmbeddingTrainer(embedding_size=50, verbose=1)
-    trainer.load_data(os.path.join('data', 'sample_data2'))
+    trainer.load_data(os.path.join('data', 'sample_data2'), minimum_count=5, minimum_frequency=10)
     trainer.train(epochs=5, batch_size=32)
     trainer.save_embeddings(os.path.join('data', 'hypernym_embedding'),\
                              os.path.join('data', 'hyponym_embedding'))
