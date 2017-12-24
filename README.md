@@ -2,9 +2,17 @@
 
 This repository contains code for implementation of "Learning Term Embeddings for Hypernymy Identification" [[Yu et al, 2015](https://www.ijcai.org/Proceedings/15/Papers/200.pdf)].
 
-Hypernym is defined as a word with a broad meaning constituting a category into which words with more specific meanings fall. For example, animal is a hypernym of dog. Correspondingly, dog is hyponym of animal.  
+## Overview
+
+Hypernym is defined as a word with a broad meaning constituting a category into which words with more specific meanings fall. For example, animal is a hypernym of dog. Correspondingly, dog is hyponym of animal.
+
+
 The main idea of this paper is to use word embeddings to represent words and train a SVM classifier on top of the embeddings and L1 norm of the difference between the embeddings.  
+
+
 Usually word embeddings (like word2vec and Glove) are trained so as to bring highly co-occuring words together. The word embeddings of cat, dog and paws will all be close to each other.  Thus they be can not be used to discriminate between hypernymy and other non-hypernymy relations (like meronyms, cohoponyms). Also as hypernymy relation is non symmetric, one embedding for each word will not suffice. Therefore we need to train two sets of embeddings.  
+
+
 We train embeddings such that the hypernym embedding of hypernym word becomes close to the hyponym embedding of hyponym. This automatically results in hypernym embedding of cohypernyms and hyponym embedding of hyponyms becoming closer. We train the embeddings in such a way that frequently occurring hypernym hyponym pairs are placed more importance.
 
 ## Requirements
