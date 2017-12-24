@@ -21,7 +21,7 @@ class EmbeddingTrainer():
         self.word_hypernym_ix = {}
         self.word_hyponym_ix = {}
         self.verbose = verbose
-    
+
     def load_data(self, filename, minimum_count=0, minimum_frequency=0):
         """Load data."""
         with open(filename, 'r') as file:
@@ -38,13 +38,10 @@ class EmbeddingTrainer():
 
         if self.verbose > 1:
             print("Data filtered.")
-        
-        # Remove duplicate words
-        self.hypernym_vocab = set(self.hypernym_vocab)
-        self.hyponym_vocab = set(self.hyponym_vocab)
 
-        self.hypernym_vocab = tuple(self.hypernym_vocab)
-        self.hyponym_vocab = tuple(self.hyponym_vocab)
+        # Remove duplicate words
+        self.hypernym_vocab = tuple(set(self.hypernym_vocab))
+        self.hyponym_vocab = tuple(set(self.hyponym_vocab))
 
         if self.verbose > 1:
             print("Duplicate words removed.")
@@ -94,7 +91,7 @@ class EmbeddingTrainer():
             self.hyponyms1 = []
             self.counts = []
             self.counts1 = []
-        
+
         def add(self, hypernym, hyponym, count, hypernym1, hyponym1, count1):
             """Add example to batch."""
             self.hypernyms.append(hypernym)
@@ -103,15 +100,6 @@ class EmbeddingTrainer():
             self.hyponyms1.append(hyponym1)
             self.counts.append(count)
             self.counts1.append(count1)
-
-        def clear(self):
-            """Clear the batch."""
-            self.hypernyms = []
-            self.hyponyms = []
-            self.hypernyms1 = []
-            self.hyponyms1 = []
-            self.counts = []
-            self.counts1 = []
 
         def is_empty(self):
             """Return true if the batch is empty"""
@@ -127,9 +115,9 @@ class EmbeddingTrainer():
         batch = EmbeddingTrainer.Batch()
 
         for epoch in range(epochs):
-            # Counts number of examples trained on during an eopch
-            counter = 0 
-            cost_in_epoch = 0
+            # Counts number of examples encountered during an eopch
+            counter = 0
+            cost_epoch = 0
 
             for (hypernym, hyponym), count in self.data.items():
                 for _ in range(count):
@@ -141,9 +129,7 @@ class EmbeddingTrainer():
                     else:
                         hypernym1 = hypernym
                         hyponym1 = random.choice(self.hyponym_vocab)
-
-                    count1 = self.data.get((hypernym1, hyponym1), 0)               
-
+                    count1 = self.data.get((hypernym1, hyponym1), 0)
                     batch.add(hypernym, hyponym, count, hypernym1, hyponym1, count1)
                     counter += 1
 
@@ -160,17 +146,19 @@ class EmbeddingTrainer():
                         cost = net(hypernyms_ix, hyponyms_ix, Variable(torch.Tensor(batch.counts)),\
                                     hypernyms1_ix, hyponyms1_ix, Variable(torch.Tensor(batch.counts1)))
 
-                        cost_in_epoch += torch.sum(cost).data[0]
+                        cost_epoch += torch.sum(cost).data[0]
                         optimizer.zero_grad()
                         cost.backward(torch.ones(cost.size()))
                         optimizer.step()
 
                         # Reset temporarily storage
-                        batch.clear()
+                        batch.__init__()
 
                     if counter % 1000 == 0:
                         if self.verbose > 1:
-                            print("Weights trained over {} examples in Epoch {}.".format(counter, epoch + 1))
+                            print("Epoch {} of {}: {} of {} ({:.4f}%)".format(epoch + 1, epochs,
+                                                                              counter, self.total_examples_epoch,
+                                                                              (counter / self.total_examples_epoch) * 100))
 
             # Update the gradients for remaining data
             if not batch.is_empty():
@@ -183,16 +171,16 @@ class EmbeddingTrainer():
                 cost = net(hypernyms_ix, hyponyms_ix, Variable(torch.Tensor(batch.counts)),\
                             hypernyms1_ix, hyponyms1_ix, Variable(torch.Tensor(batch.counts1)))
 
-                cost_in_epoch += torch.sum(cost).data[0]
+                cost_epoch += torch.sum(cost).data[0]
                 optimizer.zero_grad()
                 cost.backward(torch.ones(cost.size()))
                 optimizer.step()
 
                 # Reset temporarily storage
-                batch.clear()
+                batch.__init__()
 
             if self.verbose:
-                print("Train epoch {}: {}".format(epoch + 1, cost_in_epoch / counter))
+                print("Average cost in epoch {}: {}".format(epoch + 1, cost_epoch / counter))
 
         weights = list(net.parameters())
         self.hypernym_weights = weights[0].data.numpy()
@@ -202,21 +190,26 @@ class EmbeddingTrainer():
         """Save the embeddings to a file"""
         with open(filename1, 'w') as file:
             for hypernym, hypernym_weight in zip(self.hypernym_vocab, self.hypernym_weights):
-                file.write(hypernym + " " + self.array_to_string(hypernym_weight) + "\n")
+                file.write(hypernym + "\t" + self.array_to_string(hypernym_weight) + "\n")
 
         with open(filename2, 'w') as file:
             for hyponym, hyponym_weight in zip(self.hyponym_vocab, self.hyponym_weights):
-                file.write(hyponym + " " + self.array_to_string(hyponym_weight) + "\n")
+                file.write(hyponym + "\t" + self.array_to_string(hyponym_weight) + "\n")
 
         if self.verbose > 1:
-            "Embeddigs saved."
+            print("Embeddings saved.")
 
     def array_to_string(self, array):
         """Convert numpy array to string"""
-        string = ' '.join(map(lambda x: str(x), array))
+        string = '\t'.join(map(str, array))
         return string
 
     def filter_data(self, minimum_count, minimum_frequency):
+        """Filter data.
+
+        Removes data with count less than minimum count and terms with frequency less than minimum_frequency
+        """
+        # Counts number of times a word has appeared in the data
         counter = Counter(self.hypernym_vocab)
         counter.update(self.hyponym_vocab)
 
@@ -224,8 +217,10 @@ class EmbeddingTrainer():
         self.hyponym_vocab = []
 
         filtered_data = {}
+        self.total_examples_epoch = 0
         for (hypernym, hyponym), count in self.data.items():
             if counter[hypernym] > minimum_frequency and counter[hyponym] > minimum_frequency and count > minimum_count:
+                self.total_examples_epoch += count
                 filtered_data[(hypernym, hyponym)] = count
                 self.hypernym_vocab.append(hypernym)
                 self.hyponym_vocab.append(hyponym)
@@ -234,7 +229,7 @@ class EmbeddingTrainer():
 
 if __name__ == "__main__":
     trainer = EmbeddingTrainer(embedding_size=50, verbose=1)
-    trainer.load_data(os.path.join('data', 'sample_data2'), minimum_count=5, minimum_frequency=10)
-    trainer.train(epochs=5, batch_size=32)
+    trainer.load_data(os.path.join('data', 'probase'), minimum_count=5, minimum_frequency=10)
+    trainer.train(epochs=20, batch_size=32)
     trainer.save_embeddings(os.path.join('data', 'hypernym_embedding'),\
                              os.path.join('data', 'hyponym_embedding'))
