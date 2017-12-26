@@ -13,14 +13,13 @@ class EmbeddingTrainer():
     """Contains methods for loading, training and saving embeddings."""
     def __init__(self, embedding_size, verbose=0):
         self.embedding_size = embedding_size
+        self.verbose = verbose
         self.data = {}
         self.hypernym_vocab = []
         self.hyponym_vocab = []
-        self.hypernym_vocabulary_size = 0
-        self.hyponym_vocabulary_size = 0
+        self.net = None
         self.word_hypernym_ix = {}
         self.word_hyponym_ix = {}
-        self.verbose = verbose
 
     def load_data(self, filename, minimum_count=0, minimum_frequency=0):
         """Load data."""
@@ -46,12 +45,11 @@ class EmbeddingTrainer():
         if self.verbose > 1:
             print("Duplicate words removed.")
 
-        self.hypernym_vocabulary_size = len(self.hypernym_vocab)
-        self.hyponym_vocabulary_size = len(self.hyponym_vocab)
-
         # Dictionary which maps word to its index.
         self.word_hypernym_ix = {word: i for i, word in enumerate(self.hypernym_vocab)}
         self.word_hyponym_ix = {word: i for i, word in enumerate(self.hyponym_vocab)}
+
+        self.net = EmbeddingTrainer.Net(len(self.hypernym_vocab), len(self.hyponym_vocab), self.embedding_size)
 
         if self.verbose > 1:
             print("Index dictionary created.")
@@ -105,11 +103,10 @@ class EmbeddingTrainer():
             """Return true if the batch is empty"""
             return len(self.hypernyms) == 0
 
-    def train(self, epochs=10, batch_size=32):
+    def train(self, epochs=10, batch_size=32, lr=0.01, save_location=None):
         """Train the network"""
 
-        net = EmbeddingTrainer.Net(self.hypernym_vocabulary_size, self.hyponym_vocabulary_size, self.embedding_size)
-        optimizer = optim.SGD(net.parameters(), lr=0.01)
+        optimizer = optim.SGD(self.net.parameters(), lr=lr)
 
         # Used for temporarily storing data before gradient is updated
         batch = EmbeddingTrainer.Batch()
@@ -142,9 +139,11 @@ class EmbeddingTrainer():
                         hypernyms1_ix = Variable(torch.LongTensor([self.word_hypernym_ix[hypernym1] for hypernym1 in batch.hypernyms1]))
                         hyponyms1_ix = Variable(torch.LongTensor([self.word_hyponym_ix[hyponym1] for hyponym1 in batch.hyponyms1]))
 
+                        counts_var = Variable(torch.Tensor(batch.counts))
+                        counts1_var = Variable(torch.Tensor(batch.counts1))
+
                         # Compute cost
-                        cost = net(hypernyms_ix, hyponyms_ix, Variable(torch.Tensor(batch.counts)),\
-                                    hypernyms1_ix, hyponyms1_ix, Variable(torch.Tensor(batch.counts1)))
+                        cost = self.net(hypernyms_ix, hyponyms_ix, counts_var, hypernyms1_ix, hyponyms1_ix, counts1_var)
 
                         cost_epoch += torch.sum(cost).data[0]
                         optimizer.zero_grad()
@@ -168,8 +167,11 @@ class EmbeddingTrainer():
                 hypernyms1_ix = Variable(torch.LongTensor([self.word_hypernym_ix[hypernym1] for hypernym1 in batch.hypernyms1]))
                 hyponyms1_ix = Variable(torch.LongTensor([self.word_hyponym_ix[hyponym1] for hyponym1 in batch.hyponyms1]))
 
-                cost = net(hypernyms_ix, hyponyms_ix, Variable(torch.Tensor(batch.counts)),\
-                            hypernyms1_ix, hyponyms1_ix, Variable(torch.Tensor(batch.counts1)))
+                counts_var = Variable(torch.Tensor(batch.counts))
+                counts1_var = Variable(torch.Tensor(batch.counts1))
+
+                # Compute cost
+                cost = self.net(hypernyms_ix, hyponyms_ix, counts_var, hypernyms1_ix, hyponyms1_ix, counts1_var)
 
                 cost_epoch += torch.sum(cost).data[0]
                 optimizer.zero_grad()
@@ -182,18 +184,22 @@ class EmbeddingTrainer():
             if self.verbose:
                 print("Average cost in epoch {}: {}".format(epoch + 1, cost_epoch / counter))
 
-        weights = list(net.parameters())
-        self.hypernym_weights = weights[0].data.numpy()
-        self.hyponym_weights = weights[1].data.numpy()
+            if save_location:
+                self.save_embeddings(*save_location)
 
     def save_embeddings(self, filename1, filename2):
         """Save the embeddings to a file"""
+
+        weights = list(self.net.parameters())
+        hypernym_weights = weights[0].data.numpy()
+        hyponym_weights = weights[1].data.numpy()
+
         with open(filename1, 'w') as file:
-            for hypernym, hypernym_weight in zip(self.hypernym_vocab, self.hypernym_weights):
+            for hypernym, hypernym_weight in zip(self.hypernym_vocab, hypernym_weights):
                 file.write(hypernym + "\t" + self.array_to_string(hypernym_weight) + "\n")
 
         with open(filename2, 'w') as file:
-            for hyponym, hyponym_weight in zip(self.hyponym_vocab, self.hyponym_weights):
+            for hyponym, hyponym_weight in zip(self.hyponym_vocab, hyponym_weights):
                 file.write(hyponym + "\t" + self.array_to_string(hyponym_weight) + "\n")
 
         if self.verbose > 1:
@@ -228,8 +234,7 @@ class EmbeddingTrainer():
         self.data = filtered_data
 
 if __name__ == "__main__":
-    trainer = EmbeddingTrainer(embedding_size=50, verbose=1)
+    trainer = EmbeddingTrainer(embedding_size=50, verbose=2)
     trainer.load_data(os.path.join('data', 'probase'), minimum_count=5, minimum_frequency=10)
-    trainer.train(epochs=20, batch_size=32)
-    trainer.save_embeddings(os.path.join('data', 'hypernym_embedding'),\
-                             os.path.join('data', 'hyponym_embedding'))
+    save_location = (os.path.join('data', 'hypernym_embedding'), os.path.join('data', 'hyponym_embedding'))
+    trainer.train(epochs=20, batch_size=32, lr=0.01, save_location=save_location)
