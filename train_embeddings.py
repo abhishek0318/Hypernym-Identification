@@ -103,8 +103,11 @@ class EmbeddingTrainer():
             """Return true if the batch is empty"""
             return len(self.hypernyms) == 0
 
-    def train(self, epochs=10, batch_size=32, lr=0.01, save_location=None):
+    def train(self, epochs=10, batch_size=32, lr=0.01, gpu=False, save_location=None):
         """Train the network"""
+
+        if gpu:
+            self.net.cuda()
 
         optimizer = optim.SGD(self.net.parameters(), lr=lr)
 
@@ -143,11 +146,18 @@ class EmbeddingTrainer():
                         counts1_var = Variable(torch.Tensor(batch.counts1))
 
                         # Compute cost
-                        cost = self.net(hypernyms_ix, hyponyms_ix, counts_var, hypernyms1_ix, hyponyms1_ix, counts1_var)
+                        if gpu:
+                            cost = self.net(hypernyms_ix, hyponyms_ix, counts_var, hypernyms1_ix, hyponyms1_ix, counts1_var)
+                        else:
+                            cost = self.net(hypernyms_ix.cuda(), hyponyms_ix.cuda(), counts_var.cuda(),\
+                                            hypernyms1_ix.cuda(), hyponyms1_ix.cuda(), counts1_var.cuda())
 
                         cost_epoch += torch.sum(cost).data[0]
                         optimizer.zero_grad()
-                        cost.backward(torch.ones(cost.size()))
+                        if gpu:
+                            cost.backward(torch.ones(cost.size()).cuda())
+                        else:
+                            cost.backward(torch.ones(cost.size()))
                         optimizer.step()
 
                         # Reset temporarily storage
@@ -171,11 +181,18 @@ class EmbeddingTrainer():
                 counts1_var = Variable(torch.Tensor(batch.counts1))
 
                 # Compute cost
-                cost = self.net(hypernyms_ix, hyponyms_ix, counts_var, hypernyms1_ix, hyponyms1_ix, counts1_var)
+                if gpu:
+                    cost = self.net(hypernyms_ix, hyponyms_ix, counts_var, hypernyms1_ix, hyponyms1_ix, counts1_var)
+                else:
+                    cost = self.net(hypernyms_ix.cuda(), hyponyms_ix.cuda(), counts_var.cuda(),\
+                                    hypernyms1_ix.cuda(), hyponyms1_ix.cuda(), counts1_var.cuda())
 
                 cost_epoch += torch.sum(cost).data[0]
                 optimizer.zero_grad()
-                cost.backward(torch.ones(cost.size()))
+                if gpu:
+                    cost.backward(torch.ones(cost.size()).cuda())
+                else:
+                    cost.backward(torch.ones(cost.size()))
                 optimizer.step()
 
                 # Reset temporarily storage
@@ -191,8 +208,12 @@ class EmbeddingTrainer():
         """Save the embeddings to a file"""
 
         weights = list(self.net.parameters())
-        hypernym_weights = weights[0].data.numpy()
-        hyponym_weights = weights[1].data.numpy()
+        if weights[0].data.is_cuda:
+            hypernym_weights = weights[0].data.cpu().numpy()
+            hyponym_weights = weights[1].data.cpu().numpy()
+        else:
+            hypernym_weights = weights[0].data.numpy()
+            hyponym_weights = weights[1].data.numpy()
 
         with open(filename1, 'w') as file:
             for hypernym, hypernym_weight in zip(self.hypernym_vocab, hypernym_weights):
@@ -237,4 +258,4 @@ if __name__ == "__main__":
     trainer = EmbeddingTrainer(embedding_size=50, verbose=2)
     trainer.load_data(os.path.join('data', 'probase'), minimum_count=5, minimum_frequency=10)
     save_location = (os.path.join('data', 'hypernym_embedding'), os.path.join('data', 'hyponym_embedding'))
-    trainer.train(epochs=20, batch_size=32, lr=0.01, save_location=save_location)
+    trainer.train(epochs=20, batch_size=32, lr=0.01, gpu=False, save_location=save_location)
