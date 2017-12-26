@@ -147,10 +147,11 @@ class EmbeddingTrainer():
 
                         # Compute cost
                         if gpu:
-                            cost = self.net(hypernyms_ix, hyponyms_ix, counts_var, hypernyms1_ix, hyponyms1_ix, counts1_var)
-                        else:
                             cost = self.net(hypernyms_ix.cuda(), hyponyms_ix.cuda(), counts_var.cuda(),\
                                             hypernyms1_ix.cuda(), hyponyms1_ix.cuda(), counts1_var.cuda())
+                        else:                        
+                            cost = self.net(hypernyms_ix, hyponyms_ix, counts_var, hypernyms1_ix, hyponyms1_ix, counts1_var)
+                            
 
                         cost_epoch += torch.sum(cost).data[0]
                         optimizer.zero_grad()
@@ -182,10 +183,10 @@ class EmbeddingTrainer():
 
                 # Compute cost
                 if gpu:
-                    cost = self.net(hypernyms_ix, hyponyms_ix, counts_var, hypernyms1_ix, hyponyms1_ix, counts1_var)
-                else:
                     cost = self.net(hypernyms_ix.cuda(), hyponyms_ix.cuda(), counts_var.cuda(),\
                                     hypernyms1_ix.cuda(), hyponyms1_ix.cuda(), counts1_var.cuda())
+                else:                        
+                    cost = self.net(hypernyms_ix, hyponyms_ix, counts_var, hypernyms1_ix, hyponyms1_ix, counts1_var)
 
                 cost_epoch += torch.sum(cost).data[0]
                 optimizer.zero_grad()
